@@ -16,6 +16,9 @@
 #include <chrono>
 #include <csignal>
 #include <pthread.h>
+#include <fstream>
+#include <sstream>
+#include <sys/syscall.h>
 
 class Device {
 public:
@@ -120,6 +123,7 @@ static void recover(Device& d) {
     }
     factorial(d, 7);
 }
+static uint64_t irq_count();
 static void signal_handler(int) {}
 static void recovery_test(Device& d) {
     HeldCompletion hook;
@@ -138,9 +142,10 @@ static void recovery_test(Device& d) {
     printf("PASS timeout (%lld ms), quarantine, late completion and exact-result recovery\n",
            static_cast<long long>(ms));
 
-    // No SA_RESTART: repeatedly signal only the dedicated ioctl thread until
-    // it returns, avoiding an assumption about which scheduler tick it enters.
+    // Establish a real in-flight request before sending a signal. Otherwise
+    // EINTR could test queue acquisition rather than completion recovery.
     set_hold(true);
+    const auto before = irq_count();
     struct sigaction action{};
     action.sa_handler = signal_handler;
     sigemptyset(&action.sa_mask);
@@ -153,14 +158,95 @@ static void recovery_test(Device& d) {
         error = errno;
         finished = true;
     });
-    while (!finished.load()) {
-        pthread_kill(caller.native_handle(), SIGUSR1);
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    try {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(800);
+        bool observed = false;
+        while (!finished.load() && std::chrono::steady_clock::now() < deadline) {
+            if (irq_count() > before) { observed = true; break; }
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        check(observed && !finished.load(), "signal test needs an active wait with real IRQ");
+        // No SA_RESTART; send only to the dedicated ioctl caller.
+        while (!finished.load()) {
+            pthread_kill(caller.native_handle(), SIGUSR1);
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    } catch (...) {
+        try { set_hold(false); } catch (...) {}
+        caller.join();
+        throw;
     }
     caller.join();
     check(rc == -1 && error == EINTR, "signal must interrupt completion wait");
+    check(ioctl(d.fd, EDU_IOC_FACTORIAL, &next) == -1 && errno == EBUSY,
+          "interrupted in-flight work must retain ownership");
     recover(d);
     puts("PASS signal interruption followed by recovery");
+}
+static uint64_t irq_count() {
+    std::ifstream file("/proc/interrupts");
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.find("edu_lab") == std::string::npos) continue;
+        const auto colon = line.find(':');
+        check(colon != std::string::npos, "bad interrupt line");
+        std::istringstream columns(line.substr(colon + 1));
+        uint64_t value, sum = 0;
+        while (columns >> value) sum += value;
+        return sum;
+    }
+    throw std::runtime_error("EDU missing from /proc/interrupts");
+}
+static void detach(const char* bdf, bool remove) {
+    // Only used in the disposable guest, with the BDF selected by guest-init.
+    const std::string path = remove ? std::string("/sys/bus/pci/devices/") + bdf + "/remove"
+                                   : "/sys/bus/pci/drivers/edu_lab/unbind";
+    const int fd = open(path.c_str(), O_WRONLY | O_CLOEXEC);
+    check(fd >= 0, "open detach sysfs failed");
+    const std::string value = remove ? "1" : bdf;
+    const auto rc = write(fd, value.data(), value.size());
+    close(fd);
+    check(rc == static_cast<ssize_t>(value.size()), "detach sysfs write failed");
+}
+static void lifecycle_test(Device& d, const char* bdf, bool remove) {
+    check(syscall(SYS_delete_module, "edu_lab", O_NONBLOCK) == -1 &&
+          (errno == EWOULDBLOCK || errno == EBUSY), "open fd must pin module");
+    HeldCompletion hook;
+    const auto before = irq_count();
+    std::atomic<bool> finished{false};
+    int result = 0, error = 0;
+    std::thread caller([&] {
+        edu_value v{11, 0};
+        result = ioctl(d.fd, EDU_IOC_FACTORIAL, &v);
+        error = errno;
+        finished = true;
+    });
+    bool irq_observed = false;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(800);
+    try {
+        while (!finished.load() && std::chrono::steady_clock::now() < deadline) {
+            if (irq_count() > before) { irq_observed = true; break; }
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        check(irq_observed && !finished.load(), "could not establish active wait with real IRQ");
+        detach(bdf, remove);
+    } catch (...) {
+        try { set_hold(false); } catch (...) {}
+        caller.join(); // don't let a joinable thread turn a diagnostic into terminate()
+        throw;
+    }
+    caller.join();
+    check(result == -1 && error == ETIMEDOUT, "in-flight request must finish its bounded wait");
+    for (const auto cmd : {EDU_IOC_LIVE, EDU_IOC_FACTORIAL, static_cast<unsigned long>(_IO('E', 99))}) {
+        edu_value v{5, 0};
+        check(ioctl(d.fd, cmd, &v) == -1 && errno == ENODEV,
+              "detached handle must return ENODEV without MMIO");
+    }
+    const int new_fd = open("/dev/edu_lab", O_RDWR);
+    if (new_fd >= 0) close(new_fd);
+    check(new_fd == -1 && errno == ENOENT, "detached misc node must disappear");
+    printf("PASS %s with active wait, queued notifier, open fd; stale ioctls ENODEV\n",
+           remove ? "PCI removal" : "unbind");
 }
 int main(int argc, char** argv) {
     try {
@@ -172,6 +258,10 @@ int main(int argc, char** argv) {
         } else if (argc == 2 && !strcmp(argv[1], "recovery")) {
             Device d;
             recovery_test(d);
+        } else if (argc == 4 && !strcmp(argv[1], "lifecycle")) {
+            check(!strcmp(argv[3], "unbind") || !strcmp(argv[3], "remove"), "detach action");
+            Device d;
+            lifecycle_test(d, argv[2], !strcmp(argv[3], "remove"));
         } else if (argc == 3 && !strcmp(argv[1], "live")) {
             Device d;
             live(d, number(argv[2]));
@@ -182,7 +272,7 @@ int main(int argc, char** argv) {
             factorial(d, n);
             printf("FACTORIAL %u -> %u verified\n", n, expected_factorial(n));
         } else {
-            fputs("usage: edu-test selftest | recovery | live <u32> | factorial <0..12>\n", stderr);
+            fputs("usage: edu-test selftest | recovery | lifecycle <BDF> <unbind|remove> | live <u32> | factorial <0..12>\n", stderr);
             return 2;
         }
         puts("device closed");

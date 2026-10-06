@@ -25,6 +25,9 @@ static atomic_t claimed = ATOMIC_INIT(0);
 static bool fail_probe;
 module_param(fail_probe, bool, 0400);
 MODULE_PARM_DESC(fail_probe, "Learning hook: fail after BAR mapping to test unwind");
+static bool fail_after_irq;
+module_param(fail_after_irq, bool, 0400);
+MODULE_PARM_DESC(fail_after_irq, "Test hook: fail after IRQ registration to test unwind");
 static bool hold_completion;
 module_param(hold_completion, bool, 0600);
 MODULE_PARM_DESC(hold_completion, "Test hook: hold software notification after real IRQ ack");
@@ -235,6 +238,7 @@ static int edu_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	ret = request_irq(d->irq, edu_irq, IRQF_SHARED, "edu_lab", d);
 	if (ret) goto vectors;
 	pci_intx(pdev, 1);
+	if (fail_after_irq) { ret = -EIO; goto irq; }
 	d->misc.minor = MISC_DYNAMIC_MINOR;
 	d->misc.name = "edu_lab";
 	d->misc.fops = &edu_fops;
