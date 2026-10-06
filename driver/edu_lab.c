@@ -9,6 +9,7 @@
 #include <linux/mutex.h>
 #include <linux/interrupt.h>
 #include <linux/completion.h>
+#include <linux/workqueue.h>
 #include "include/edu_lab.h"
 
 #define EDU_LIVE 0x04
@@ -24,6 +25,9 @@ static atomic_t claimed = ATOMIC_INIT(0);
 static bool fail_probe;
 module_param(fail_probe, bool, 0400);
 MODULE_PARM_DESC(fail_probe, "Learning hook: fail after BAR mapping to test unwind");
+static bool hold_completion;
+module_param(hold_completion, bool, 0600);
+MODULE_PARM_DESC(hold_completion, "Test hook: hold software notification after real IRQ ack");
 
 struct edu_lab {
 	void __iomem *bar;
@@ -36,6 +40,8 @@ struct edu_lab {
 	struct completion done;
 	bool pending;        /* irq_lock: ownership survives timeout or signal */
 	bool irq_seen;       /* irq_lock: only set after real FACT IRQ ack */
+	bool notified;       /* irq_lock: completion delivered, including deferred hook */
+	struct delayed_work notify_work;
 };
 
 static void edu_free(struct kref *ref)
@@ -68,6 +74,22 @@ static int edu_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
+static void edu_notify_work(struct work_struct *work)
+{
+	struct edu_lab *d = container_of(to_delayed_work(work), struct edu_lab,
+					notify_work);
+	unsigned long flags;
+
+	spin_lock_irqsave(&d->irq_lock, flags);
+	if (READ_ONCE(hold_completion)) {
+		schedule_delayed_work(&d->notify_work, msecs_to_jiffies(10));
+	} else if (d->pending && d->irq_seen && !d->notified) {
+		d->notified = true;
+		complete(&d->done);
+	}
+	spin_unlock_irqrestore(&d->irq_lock, flags);
+}
+
 static irqreturn_t edu_irq(int irq, void *cookie)
 {
 	struct edu_lab *d = cookie;
@@ -85,7 +107,12 @@ static irqreturn_t edu_irq(int irq, void *cookie)
 	if ((status & EDU_FACT_IRQ) && d->pending && !d->irq_seen &&
 	    !(readl(d->bar + EDU_STATUS) & EDU_BUSY)) {
 		d->irq_seen = true;
-		complete(&d->done);
+		if (READ_ONCE(hold_completion))
+			schedule_delayed_work(&d->notify_work, msecs_to_jiffies(10));
+		else {
+			d->notified = true;
+			complete(&d->done);
+		}
 	}
 	spin_unlock_irqrestore(&d->irq_lock, flags);
 	return IRQ_HANDLED;
@@ -102,7 +129,7 @@ static int edu_factorial(struct edu_lab *d, struct edu_value *value)
 		return -EINVAL; /* 12! fits u32, 13! does not */
 	spin_lock_irqsave(&d->irq_lock, flags);
 	if ((readl(d->bar + EDU_STATUS) & EDU_BUSY) ||
-	    (d->pending && !d->irq_seen)) {
+	    (d->pending && (!d->irq_seen || !d->notified))) {
 		ret = -EBUSY;
 		goto unlock;
 	}
@@ -110,6 +137,7 @@ static int edu_factorial(struct edu_lab *d, struct edu_value *value)
 	 * excludes the old ISR's complete() from racing reinitialization. */
 	d->pending = true;
 	d->irq_seen = false;
+	d->notified = false;
 	reinit_completion(&d->done);
 	writel(EDU_IRQ_ENABLE, d->bar + EDU_STATUS);
 	writel(value->input, d->bar + EDU_FACT);
@@ -123,7 +151,8 @@ unlock:
 	if (waited <= 0)
 		return waited ? (int)waited : -ETIMEDOUT;
 	spin_lock_irqsave(&d->irq_lock, flags);
-	if (!d->irq_seen || (readl(d->bar + EDU_STATUS) & EDU_BUSY))
+	if (!d->irq_seen || !d->notified ||
+	    (readl(d->bar + EDU_STATUS) & EDU_BUSY))
 		ret = -EIO;
 	else {
 		value->result = readl(d->bar + EDU_FACT);
@@ -180,6 +209,7 @@ static int edu_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	kref_init(&d->refs);
 	spin_lock_init(&d->irq_lock);
 	init_completion(&d->done);
+	INIT_DELAYED_WORK(&d->notify_work, edu_notify_work);
 	ret = pci_enable_device_mem(pdev);
 	if (ret) goto object;
 	if (!(pci_resource_flags(pdev, 0) & IORESOURCE_MEM) ||
@@ -218,6 +248,7 @@ static int edu_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 irq:
 	pci_intx(pdev, 0);
 	free_irq(d->irq, d);
+	cancel_delayed_work_sync(&d->notify_work);
 vectors:
 	pci_free_irq_vectors(pdev);
 unmap:
@@ -246,6 +277,7 @@ static void edu_remove(struct pci_dev *pdev)
 	readl(d->bar + EDU_STATUS);
 	pci_intx(pdev, 0);
 	free_irq(d->irq, d); /* waits for ISR before MMIO/object release */
+	cancel_delayed_work_sync(&d->notify_work); /* ISR cannot enqueue now */
 	pci_free_irq_vectors(pdev);
 	writel(~0U, d->bar + EDU_IRQ_ACK);
 	readl(d->bar + EDU_IRQ_STATUS);

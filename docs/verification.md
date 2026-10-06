@@ -21,3 +21,8 @@ Same build/run command: PASS (`03-factorial.log`). All 0..12 factorials checked 
 QEMU v11.1.2 source was inspected: FACT_IRQ=1; COMPUTING clears before notification is raised. This supports retaining ownership through both idle and acknowledged IRQ. The one-second bound and pending guard are implemented with interrupts as a coherent safety requirement; deterministic timeout testing belongs to the next gate.
 
 Limitations: INTx only, not MSI. Permanent lost notification requires quarantine/guest restart; rebind after unresolved hardware computation is not a supported recovery path. No arbitrary hardware failure or physical unplug validation.
+
+## Increment 4: timeout and recovery
+Same build/run command: PASS (`04-recovery.log`). Root-only hold_completion defers software delivery after actual hardware IRQ acknowledgement. The actual kernel wait expired in 1023 ms; the next distinct request returned EBUSY while the old delivery was held. Releasing the hook allowed 12! (not old 8!) and subsequent 7! to pass. Liveness remained usable during quarantine. A signal interrupted a held completion wait, then recovery passed. /proc/interrupts records the EDU shared INTx line. All earlier baseline/concurrency/unload checks passed.
+
+This is deliberately injected deferred notification, not slow hardware or mocked PCI/MMIO. Keeping the hold set demonstrates continued quarantine, not a reset. Device wait is bounded; mutex queue time is not. Removal with queued deferred work remains the next verification gate.

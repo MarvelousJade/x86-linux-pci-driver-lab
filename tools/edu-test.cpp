@@ -13,6 +13,9 @@
 #include <atomic>
 #include <thread>
 #include <vector>
+#include <chrono>
+#include <csignal>
+#include <pthread.h>
 
 class Device {
 public:
@@ -88,6 +91,77 @@ static void computation_test(Device& d) {
     check(!failures.load(), "concurrent caller failed");
     puts("PASS four concurrent handles, 100 factorial requests");
 }
+static void set_hold(bool held) {
+    const char* path = "/sys/module/edu_lab/parameters/hold_completion";
+    const int fd = open(path, O_WRONLY | O_CLOEXEC);
+    check(fd >= 0, "open hold_completion test hook failed");
+    const auto written = write(fd, held ? "1" : "0", 1);
+    close(fd);
+    check(written == 1, "write hold_completion test hook failed");
+}
+class HeldCompletion {
+public:
+    HeldCompletion() { set_hold(true); }
+    ~HeldCompletion() { try { set_hold(false); } catch (...) {} }
+};
+static void recover(Device& d) {
+    set_hold(false);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    for (;;) {
+        edu_value v{12, 0};
+        const int rc = ioctl(d.fd, EDU_IOC_FACTORIAL, &v);
+        if (rc == 0) {
+            check(v.result == expected_factorial(12), "late old result returned as new request");
+            break;
+        }
+        check(errno == EBUSY, "unexpected recovery error");
+        check(std::chrono::steady_clock::now() < deadline, "recovery deadline exceeded");
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    factorial(d, 7);
+}
+static void signal_handler(int) {}
+static void recovery_test(Device& d) {
+    HeldCompletion hook;
+    edu_value old{8, 0};
+    const auto start = std::chrono::steady_clock::now();
+    check(ioctl(d.fd, EDU_IOC_FACTORIAL, &old) == -1 && errno == ETIMEDOUT,
+          "held real IRQ completion must time out");
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start).count();
+    check(ms >= 900 && ms < 3000, "timeout wait outside test budget");
+    edu_value next{12, 0};
+    check(ioctl(d.fd, EDU_IOC_FACTORIAL, &next) == -1 && errno == EBUSY,
+          "new request must be refused while old completion is held");
+    live(d, 0xfeedbeef);
+    recover(d);
+    printf("PASS timeout (%lld ms), quarantine, late completion and exact-result recovery\n",
+           static_cast<long long>(ms));
+
+    // No SA_RESTART: repeatedly signal only the dedicated ioctl thread until
+    // it returns, avoiding an assumption about which scheduler tick it enters.
+    set_hold(true);
+    struct sigaction action{};
+    action.sa_handler = signal_handler;
+    sigemptyset(&action.sa_mask);
+    check(sigaction(SIGUSR1, &action, nullptr) == 0, "sigaction failed");
+    std::atomic<bool> finished{false};
+    int rc = 0, error = 0;
+    std::thread caller([&] {
+        edu_value v{9, 0};
+        rc = ioctl(d.fd, EDU_IOC_FACTORIAL, &v);
+        error = errno;
+        finished = true;
+    });
+    while (!finished.load()) {
+        pthread_kill(caller.native_handle(), SIGUSR1);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    caller.join();
+    check(rc == -1 && error == EINTR, "signal must interrupt completion wait");
+    recover(d);
+    puts("PASS signal interruption followed by recovery");
+}
 int main(int argc, char** argv) {
     try {
         static_assert(sizeof(edu_value) == 8, "ABI size");
@@ -95,6 +169,9 @@ int main(int argc, char** argv) {
             Device d;
             liveness_test(d);
             computation_test(d);
+        } else if (argc == 2 && !strcmp(argv[1], "recovery")) {
+            Device d;
+            recovery_test(d);
         } else if (argc == 3 && !strcmp(argv[1], "live")) {
             Device d;
             live(d, number(argv[2]));
@@ -105,7 +182,7 @@ int main(int argc, char** argv) {
             factorial(d, n);
             printf("FACTORIAL %u -> %u verified\n", n, expected_factorial(n));
         } else {
-            fputs("usage: edu-test selftest | live <u32> | factorial <0..12>\n", stderr);
+            fputs("usage: edu-test selftest | recovery | live <u32> | factorial <0..12>\n", stderr);
             return 2;
         }
         puts("device closed");
