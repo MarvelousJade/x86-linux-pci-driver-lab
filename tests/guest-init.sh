@@ -24,9 +24,11 @@ for p in /sys/bus/pci/drivers/edu_lab/????:??:??.?; do
     [ -e "$p" ] && count=$((count+1))
 done
 [ "$count" = 1 ] || fail single-instance
+/lab/edu-test selftest || fail userspace-liveness
 rmmod edu_lab || fail unload
 insmod /lab/edu_lab.ko || fail reload
+/lab/edu-test live 0xdeadbeef || fail reload-liveness
 rmmod edu_lab || fail second-unload
 dmesg
-echo 'LAB PASS discovery/load/unload/reload/single-instance'
+echo 'LAB PASS discovery/liveness/interface/load/unload/reload/single-instance'
 poweroff -f
