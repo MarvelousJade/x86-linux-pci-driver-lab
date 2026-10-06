@@ -18,7 +18,7 @@
 #define EDU_IRQ_STATUS 0x24
 #define EDU_IRQ_ACK 0x64
 #define EDU_BUSY 0x01
-#define EDU_IRQ_ENABLE 0x80
+#define EDU_IRQ_ENABLE 0x40
 #define EDU_FACT_IRQ 0x01
 #define EDU_TIMEOUT_MS 1000
 static atomic_t claimed = ATOMIC_INIT(0);
