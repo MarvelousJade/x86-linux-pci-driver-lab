@@ -7,9 +7,19 @@
 #include <linux/uaccess.h>
 #include <linux/kref.h>
 #include <linux/mutex.h>
+#include <linux/interrupt.h>
+#include <linux/completion.h>
 #include "include/edu_lab.h"
 
 #define EDU_LIVE 0x04
+#define EDU_FACT 0x08
+#define EDU_STATUS 0x20
+#define EDU_IRQ_STATUS 0x24
+#define EDU_IRQ_ACK 0x64
+#define EDU_BUSY 0x01
+#define EDU_IRQ_ENABLE 0x80
+#define EDU_FACT_IRQ 0x01
+#define EDU_TIMEOUT_MS 1000
 static atomic_t claimed = ATOMIC_INIT(0);
 static bool fail_probe;
 module_param(fail_probe, bool, 0400);
@@ -21,6 +31,11 @@ struct edu_lab {
 	struct mutex op_lock; /* serializes ioctls and resource teardown */
 	struct kref refs;     /* one PCI binding reference plus one per open fd */
 	bool removed;        /* protected by op_lock */
+	int irq;
+	spinlock_t irq_lock; /* serializes ISR against request preparation */
+	struct completion done;
+	bool pending;        /* irq_lock: ownership survives timeout or signal */
+	bool irq_seen;       /* irq_lock: only set after real FACT IRQ ack */
 };
 
 static void edu_free(struct kref *ref)
@@ -53,6 +68,71 @@ static int edu_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
+static irqreturn_t edu_irq(int irq, void *cookie)
+{
+	struct edu_lab *d = cookie;
+	unsigned long flags;
+	u32 status;
+
+	spin_lock_irqsave(&d->irq_lock, flags);
+	status = readl(d->bar + EDU_IRQ_STATUS);
+	if (!status) {
+		spin_unlock_irqrestore(&d->irq_lock, flags);
+		return IRQ_NONE; /* shared INTx, not ours */
+	}
+	writel(status, d->bar + EDU_IRQ_ACK);
+	readl(d->bar + EDU_IRQ_STATUS); /* flush acknowledgement */
+	if ((status & EDU_FACT_IRQ) && d->pending && !d->irq_seen &&
+	    !(readl(d->bar + EDU_STATUS) & EDU_BUSY)) {
+		d->irq_seen = true;
+		complete(&d->done);
+	}
+	spin_unlock_irqrestore(&d->irq_lock, flags);
+	return IRQ_HANDLED;
+}
+
+/* Called with op_lock held. One owner, one register, no cancellation/reset. */
+static int edu_factorial(struct edu_lab *d, struct edu_value *value)
+{
+	unsigned long flags;
+	long waited;
+	int ret = 0;
+
+	if (value->input > EDU_MAX_FACTORIAL)
+		return -EINVAL; /* 12! fits u32, 13! does not */
+	spin_lock_irqsave(&d->irq_lock, flags);
+	if ((readl(d->bar + EDU_STATUS) & EDU_BUSY) ||
+	    (d->pending && !d->irq_seen)) {
+		ret = -EBUSY;
+		goto unlock;
+	}
+	/* irq_seen means the old IRQ has been acked. Holding irq_lock also
+	 * excludes the old ISR's complete() from racing reinitialization. */
+	d->pending = true;
+	d->irq_seen = false;
+	reinit_completion(&d->done);
+	writel(EDU_IRQ_ENABLE, d->bar + EDU_STATUS);
+	writel(value->input, d->bar + EDU_FACT);
+	readl(d->bar + EDU_STATUS); /* flush start */
+unlock:
+	spin_unlock_irqrestore(&d->irq_lock, flags);
+	if (ret)
+		return ret;
+	waited = wait_for_completion_interruptible_timeout(&d->done,
+					msecs_to_jiffies(EDU_TIMEOUT_MS));
+	if (waited <= 0)
+		return waited ? (int)waited : -ETIMEDOUT;
+	spin_lock_irqsave(&d->irq_lock, flags);
+	if (!d->irq_seen || (readl(d->bar + EDU_STATUS) & EDU_BUSY))
+		ret = -EIO;
+	else {
+		value->result = readl(d->bar + EDU_FACT);
+		d->pending = false;
+	}
+	spin_unlock_irqrestore(&d->irq_lock, flags);
+	return ret;
+}
+
 static long edu_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct edu_lab *d = file->private_data;
@@ -63,12 +143,19 @@ static long edu_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	if (mutex_lock_interruptible(&d->op_lock))
 		return -ERESTARTSYS;
 	if (d->removed) { ret = -ENODEV; goto out; }
-	if (cmd != EDU_IOC_LIVE) { ret = -ENOTTY; goto out; }
+	if (cmd != EDU_IOC_LIVE && cmd != EDU_IOC_FACTORIAL) {
+		ret = -ENOTTY; goto out;
+	}
 	if (copy_from_user(&value, ptr, sizeof(value))) {
 		ret = -EFAULT; goto out;
 	}
-	writel(value.input, d->bar + EDU_LIVE);
-	value.result = readl(d->bar + EDU_LIVE); /* flush posted write */
+	if (cmd == EDU_IOC_LIVE) {
+		writel(value.input, d->bar + EDU_LIVE);
+		value.result = readl(d->bar + EDU_LIVE); /* flush posted write */
+	} else {
+		ret = edu_factorial(d, &value);
+		if (ret) goto out;
+	}
 	ret = copy_to_user(ptr, &value, sizeof(value)) ? -EFAULT : 0;
 out:
 	mutex_unlock(&d->op_lock);
@@ -91,6 +178,8 @@ static int edu_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (!d) { ret = -ENOMEM; goto claim; }
 	mutex_init(&d->op_lock);
 	kref_init(&d->refs);
+	spin_lock_init(&d->irq_lock);
+	init_completion(&d->done);
 	ret = pci_enable_device_mem(pdev);
 	if (ret) goto object;
 	if (!(pci_resource_flags(pdev, 0) & IORESOURCE_MEM) ||
@@ -102,16 +191,35 @@ static int edu_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	d->bar = pci_iomap(pdev, 0, 0);
 	if (!d->bar) { ret = -ENOMEM; goto region; }
 	if (fail_probe) { ret = -EIO; goto unmap; }
+	/* INTx is deliberately selected for the shared-IRQ learning path. */
+	pci_intx(pdev, 0);
+	writel(0, d->bar + EDU_STATUS);
+	writel(~0U, d->bar + EDU_IRQ_ACK);
+	readl(d->bar + EDU_IRQ_STATUS);
+	if (readl(d->bar + EDU_STATUS) & EDU_BUSY) {
+		ret = -EBUSY; goto unmap;
+	}
+	ret = pci_alloc_irq_vectors(pdev, 1, 1, PCI_IRQ_INTX);
+	if (ret < 0) goto unmap;
+	d->irq = pci_irq_vector(pdev, 0);
+	ret = request_irq(d->irq, edu_irq, IRQF_SHARED, "edu_lab", d);
+	if (ret) goto vectors;
+	pci_intx(pdev, 1);
 	d->misc.minor = MISC_DYNAMIC_MINOR;
 	d->misc.name = "edu_lab";
 	d->misc.fops = &edu_fops;
 	d->misc.parent = &pdev->dev;
 	d->misc.mode = 0600;
 	ret = misc_register(&d->misc);
-	if (ret) goto unmap;
+	if (ret) goto irq;
 	pci_set_drvdata(pdev, d);
 	dev_info(&pdev->dev, "EDU ready, id=%08x\n", readl(d->bar));
 	return 0;
+irq:
+	pci_intx(pdev, 0);
+	free_irq(d->irq, d);
+vectors:
+	pci_free_irq_vectors(pdev);
 unmap:
 	pci_iounmap(pdev, d->bar);
 region:
@@ -132,6 +240,15 @@ static void edu_remove(struct pci_dev *pdev)
 	misc_deregister(&d->misc); /* no new opens before dropping binding ref */
 	mutex_lock(&d->op_lock);
 	d->removed = true;
+	/* Mask at PCI level too: no reset/cancel exists, and a computation
+	 * thread could already have decided to raise a late interrupt. */
+	writel(0, d->bar + EDU_STATUS);
+	readl(d->bar + EDU_STATUS);
+	pci_intx(pdev, 0);
+	free_irq(d->irq, d); /* waits for ISR before MMIO/object release */
+	pci_free_irq_vectors(pdev);
+	writel(~0U, d->bar + EDU_IRQ_ACK);
+	readl(d->bar + EDU_IRQ_STATUS);
 	pci_iounmap(pdev, d->bar);
 	pci_disable_device(pdev);
 	pci_release_region(pdev, 0);

@@ -13,4 +13,11 @@ Limitations at this gate: no userspace workflow or interrupts yet. Injection cov
 ## Increment 2: first end-to-end workflow
 Same build/run command: PASS. `02-liveness.log` records load -> C++ open -> four register inversion patterns -> invalid ioctl command/size/direction and null pointer rejection -> close -> unload. Reload liveness 0xdeadbeef -> 0x21524110 also passed. C++ built static with -Wall -Wextra -Werror; module W=1. Initial build found removed `no_llseek` API; corrected to NULL llseek before committing. Static lifetime review found no concrete open/remove/kref issue; this is advisory, not runtime removal evidence.
 
-Limitations: native x86-64 ABI only. Runtime removal, interrupts, and recovery are not yet verified.
+Limitations: native x86-64 ABI only. Runtime removal, interrupts, and recovery were not yet verified at this gate.
+
+## Increment 3: interrupt-driven factorial
+Same build/run command: PASS (`03-factorial.log`). All 0..12 factorials checked against userspace calculations over 130 repeated requests; invalid 13 and u32-max return EINVAL; four simultaneous independent handles completed another 100 exact-result requests. Only the acknowledged real FACT_IRQ path signals completion; no polling path manufactures success. First workflow and clean unload/reload still pass. Build W=1 and C++ warnings-as-errors passed.
+
+QEMU v11.1.2 source was inspected: FACT_IRQ=1; COMPUTING clears before notification is raised. This supports retaining ownership through both idle and acknowledged IRQ. The one-second bound and pending guard are implemented with interrupts as a coherent safety requirement; deterministic timeout testing belongs to the next gate.
+
+Limitations: INTx only, not MSI. Permanent lost notification requires quarantine/guest restart; rebind after unresolved hardware computation is not a supported recovery path. No arbitrary hardware failure or physical unplug validation.

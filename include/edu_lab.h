@@ -10,4 +10,6 @@ struct edu_value {
 	__u32 result;
 };
 #define EDU_IOC_LIVE _IOWR('E', 1, struct edu_value)
+#define EDU_IOC_FACTORIAL _IOWR('E', 2, struct edu_value)
+#define EDU_MAX_FACTORIAL 12U
 #endif
