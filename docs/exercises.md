@@ -4,10 +4,10 @@ These are **intentionally introduced learning defects authored by the agent**, n
 
 | Checkpoint | Faulty commit | Regression | Observed result |
 |---|---|---|---|
-| learning-exercise-a | 0fc5d0b | selftest | liveness passes, factorial fails |
-| learning-exercise-b | 640d47d | recovery | ordinary selftest passes, recovery fails |
+| learning-exercise-a | e8e6bd7 | selftest | liveness passes, factorial fails |
+| learning-exercise-b | fc39836 | recovery | ordinary selftest passes, recovery fails |
 
-Both derive from the verified-baseline (`cae247e`) driver; B follows the separately verified restoration of A. The reference restorations passed their focused regressions and full guest suite. Those reference patches/root causes are in the separate solutions directory, not these instructions.
+Both derive from the verified-baseline (`7c33b20`) driver; B follows the separately verified restoration of A. The reference restorations passed their focused regressions and full guest suite. Those reference patches/root causes are in the separate solutions directory, not these instructions.
 
 Run exercises only in the disposable QEMU guest. Do not merge faulty code into main. Preserve your own investigation notes before looking at a solution. Solutions and patches are stored separately under `solutions/`; this page contains no progressive hints. Ask for a hint when you want one.
 

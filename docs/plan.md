@@ -20,4 +20,4 @@ Sources read before implementation:
 - https://docs.kernel.org/scheduler/completion.html
 - https://docs.kernel.org/core-api/kref.html
 
-Completion status: all six implementation/preparation gates pass. Actual guest logs, exact versions and reproducible commands are in verification.md and evidence/. Baseline tag: verified-baseline (cae247e). Learning tags preserve two independently reproduced intentional failures; separate reference restorations pass. Working checkout returns to main. The learner's own investigations and later interview stories remain future work, not attributed to the agent's implementation.
+Completion status: all six implementation/preparation gates pass. Actual guest logs, exact versions and reproducible commands are in verification.md and evidence/. Baseline tag: verified-baseline (7c33b20). Learning tags preserve two independently reproduced intentional failures; separate reference restorations pass. Working checkout returns to main. The learner's own investigations and later interview stories remain future work, not attributed to the agent's implementation.
