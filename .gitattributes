@@ -1,0 +1,2 @@
+# Preserve serial console output verbatim (CRLF and kernel formatting).
+docs/evidence/*.log -text -whitespace
