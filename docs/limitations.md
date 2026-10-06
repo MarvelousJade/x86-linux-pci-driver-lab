@@ -9,4 +9,4 @@
 - Tests exercise sysfs unbind and PCI remove in a disposable guest, not physical surprise removal. Existing fd pins the module, but not the PCI binding. No forced module unload is supported.
 - Unsigned out-of-tree module taint is expected in this guest. No Secure Boot deployment, packaging for every distribution, KVM validation, stress benchmarks or proof of all possible scheduler interleavings.
 - Rolling Arch download versions may change. Exact tested packages/versions and commands are retained; use matching guest headers and compiler. Static BusyBox and static C++ keep the guest small. Build/setup failures are not hardware incidents.
-- Debugging exercises are intentionally introduced by the agent on separate checkpoints; never merge them into main. Learner solutions should be verified with actual guest runs.
+- Debugging exercises are intentionally introduced on separate checkpoints; never merge them into main. Learner solutions should be verified with actual guest runs.

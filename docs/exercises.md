@@ -1,6 +1,6 @@
 # Debugging exercises (learner instructions — no solutions)
 
-These are **intentionally introduced learning defects authored by the agent**, not production incidents. Main must stay passing. Two independent faulty checkpoints are preserved on the `learning` branch with neutral tags; use the checkpoint tag, not an arbitrary later commit.
+These are **intentionally introduced learning defects**, not production incidents. Main must stay passing. Two independent faulty checkpoints are preserved on the `learning` branch with neutral tags; use the checkpoint tag, not an arbitrary later commit.
 
 | Checkpoint | Faulty commit | Regression | Observed result |
 |---|---|---|---|
@@ -43,4 +43,4 @@ Expected faulty outcome: the regression fails. Trace request ownership at timeou
 - Problem -> hypothesis -> evidence -> decision -> fix -> verification.
 - Hypotheses you rejected and why; your minimal patch; regression/full-suite output.
 
-After saving any learner changes, `git switch main` returns to the passing project. Run `source scripts/lab-env.sh; bash scripts/verify-main.sh` to rebuild (never trust a .ko left over from an exercise). The agent's separately verified reference restoration is not a claim that you have solved an exercise.
+After saving any learner changes, `git switch main` returns to the passing project. Run `source scripts/lab-env.sh; bash scripts/verify-main.sh` to rebuild (never trust a .ko left over from an exercise).

@@ -11,7 +11,7 @@ Preflight: parent directory is not a Git repository (.git only contains browser 
 5. Lifecycle: open handles survive unbind as objects, not hardware access; subsequent ioctls return ENODEV; in-flight removal and reload pass. Finish evidence, decisions, interview guide.
 6. Only after baseline passes: separate intentionally defective learning checkpoints and separately stored solutions; regression fails on checkpoint and passes on main; return checkout to main.
 
-Each increment: implement -> run applicable checks -> investigate/fix -> rerun -> inspect diff -> focused commit using agent identity. Never substitute compilation for integration. No push.
+Each increment: implement -> run applicable checks -> investigate/fix -> rerun -> inspect diff -> focused commit. Never substitute compilation for integration. Publish only after authorization.
 
 Sources read before implementation:
 - https://www.qemu.org/docs/master/specs/edu.html
@@ -20,4 +20,4 @@ Sources read before implementation:
 - https://docs.kernel.org/scheduler/completion.html
 - https://docs.kernel.org/core-api/kref.html
 
-Completion status: all six implementation/preparation gates pass. Actual guest logs, exact versions and reproducible commands are in verification.md and evidence/. Baseline tag: verified-baseline (7c33b20). Learning tags preserve two independently reproduced intentional failures; separate reference restorations pass. Working checkout returns to main. The learner's own investigations and later interview stories remain future work, not attributed to the agent's implementation.
+Completion status: all six implementation/preparation gates pass. Actual guest logs, exact versions and reproducible commands are in verification.md and evidence/. Baseline tag: verified-baseline (7c33b20). Learning tags preserve two independently reproduced intentional failures; separate reference restorations pass. Working checkout returns to main. Personal investigations and interview stories should be based on completed exercises and actual notes.

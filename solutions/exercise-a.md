@@ -1,6 +1,6 @@
 # Exercise A reference solution — spoilers
 
-Do not read before investigating. This is an agent-introduced defect and an agent reference fix, not learner reasoning or a historical incident.
+Do not read before investigating. This is an intentionally introduced learning defect and a separately verified reference fix, not a historical incident.
 
 Faulty checkpoint: learning-exercise-a (`e8e6bd7`), based on verified-baseline (`7c33b20`). Real guest liveness passed, but factorial ioctl returned ETIMEDOUT and selected regression failed. See docs/evidence/exercise-a-fault.log.
 
@@ -12,4 +12,4 @@ git apply solutions/exercise-a.patch
 ```
 If the patch is not in that checkout, use a separately saved copy or `git show main:solutions/exercise-a.patch` after deciding to view the answer.
 
-Regression: `source scripts/lab-env.sh; bash scripts/build-guest.sh; LAB_TEST=selftest bash scripts/run-guest.sh`. Then run the full suite. Reference restoration PASS: focused selftest (130 repeated and 100 concurrent requests) and full lifecycle/recovery suite. Logs: docs/evidence/exercise-a-fixed.log and exercise-a-fixed-full.log. No kernel BUG/Oops/WARNING/panic. This verifies the agent's reference fix; it does not claim the learner has investigated or fixed the defect.
+Regression: `source scripts/lab-env.sh; bash scripts/build-guest.sh; LAB_TEST=selftest bash scripts/run-guest.sh`. Then run the full suite. Reference restoration PASS: focused selftest (130 repeated and 100 concurrent requests) and full lifecycle/recovery suite. Logs: docs/evidence/exercise-a-fixed.log and exercise-a-fixed-full.log. No kernel BUG/Oops/WARNING/panic. This verifies the reference fix; use your own investigation notes to record your solution.

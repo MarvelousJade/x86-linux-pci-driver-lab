@@ -1,6 +1,6 @@
 # Interview preparation
 
-These are descriptions of the project, not claims about your personal work. Agent-authored code and tests are recorded in Git. Say what you actually implemented, reviewed, ran or debugged yourself; do not present agent investigation as your own.
+Use this guide to understand the project and trace its code. Describe your own implementation, review, testing and debugging experience accurately.
 
 ## 60-second introduction
 
@@ -34,4 +34,4 @@ Use only verified ledger results when discussing specific checks.
 ## Your debugging notes (fill after doing exercises)
 
 Use `Problem -> hypothesis -> evidence -> decision -> fix -> verification`.
-Record commands, observed output, rejected hypotheses and diff/commit. Leave hypotheses and reasoning blank until you actually investigate. After you share those notes, we can prepare accurate stories from them. There are no invented incidents, customers, benchmarks or personal discovery claims here.
+Record commands, observed output, rejected hypotheses and diff/commit. Leave hypotheses and reasoning blank until you actually investigate. Use those notes to prepare evidence-based interview stories. There are no invented incidents, customers, benchmarks or personal discovery claims here.

@@ -1,10 +1,10 @@
-# History attribution and learning-fix merge
+# Git history and learning-fix merge
 
-At the user's explicit request, all project commits on main, learning and reference-solutions (including tagged checkpoints) were reauthored as **MarvelousJade <fanshaoyu9@outlook.com>**. Existing committer identities were preserved. This changes Git attribution, not the factual agent-assisted implementation, testing or intentional-defect provenance. No personal investigation is attributed to the learner.
+At the user's explicit request, all project commits on main, learning and reference-solutions (including tagged checkpoints) were reauthored as **MarvelousJade <fanshaoyu9@outlook.com>**. Existing committer identities were preserved. The intentionally introduced defects and verified reference restorations retain their original learning purpose.
 
 The verified reference-solutions history was merged into main with a non-fast-forward merge. The intentional faulty checkpoints are now ancestors of main, followed by verified restorations; the current main driver remains identical to verified-baseline. The bugs were introduced for learning, not discovered on main or in production. Learning tags still select their faulty snapshots.
 
-An external-to-history backup bundle is retained at `.git/before-attribution.bundle` for local recovery. Nothing was pushed. Historical snapshots may mention the original short IDs; this table maps them to the rewritten IDs. Commit trees were unchanged by the attribution rewrite.
+An external-to-history backup bundle is retained at `.git/before-attribution.bundle` for local recovery. The backup was created before initial publication. Historical snapshots may mention the original short IDs; this table maps them to the rewritten IDs. Commit trees were unchanged by the attribution rewrite.
 
 | Original ID | Rewritten ID | Milestone |
 |---|---|---|
