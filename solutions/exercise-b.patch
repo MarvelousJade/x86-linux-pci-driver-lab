@@ -1,0 +1,14 @@
+diff --git a/driver/edu_lab.c b/driver/edu_lab.c
+index 8ec61f8..d567265 100644
+--- a/driver/edu_lab.c
++++ b/driver/edu_lab.c
+@@ -131,7 +131,8 @@ static int edu_factorial(struct edu_lab *d, struct edu_value *value)
+ 	if (value->input > EDU_MAX_FACTORIAL)
+ 		return -EINVAL; /* 12! fits u32, 13! does not */
+ 	spin_lock_irqsave(&d->irq_lock, flags);
+-	if (readl(d->bar + EDU_STATUS) & EDU_BUSY) {
++	if ((readl(d->bar + EDU_STATUS) & EDU_BUSY) ||
++	    (d->pending && (!d->irq_seen || !d->notified))) {
+ 		ret = -EBUSY;
+ 		goto unlock;
+ 	}
