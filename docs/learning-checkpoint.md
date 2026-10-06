@@ -1,5 +1,5 @@
-# Intentionally faulty checkpoint A
+# Reference restoration A
 
-Agent-authored learning defect, derived from `verified-baseline`. This is not an accidental defect found in production or the learner's investigation. Ordinary liveness works, but supported factorial work fails. Learner instructions and reproduction command: docs/exercises.md, Exercise A.
+This reference-solutions checkpoint restores the agent-introduced Exercise A defect. Actual focused regression and full guest suite pass. Root cause and patch are deliberately separate in solutions/exercise-a.md and solutions/exercise-a.patch. The original faulty checkpoint remains tagged learning-exercise-a; learner instructions are docs/exercises.md.
 
-Use LAB_TEST=selftest. Acceptance for preserving this checkpoint: compilation succeeds, real guest liveness passes, factorial regression fails with LAB FAIL (not a host launch failure). The known-good baseline's focused selftest passed before injection. Record the faulty serial log after reproduction. Do not count this checkpoint as a passing portfolio build.
+No learner investigation or solution is attributed here.
