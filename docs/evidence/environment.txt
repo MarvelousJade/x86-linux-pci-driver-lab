@@ -2,6 +2,9 @@ Linux DESKTOP-P8D9NDE 6.18.40.1-microsoft-standard-WSL2 #1 SMP PREEMPT_DYNAMIC F
 gcc (GCC) 16.2.1 20260810
 g++ (GCC) 16.2.1 20260810
 GNU Make 4.4.1
+GNU ld (GNU Binutils) 2.44
+v1.32
+cpio (GNU cpio) 2.15
 QEMU emulator version 11.1.2
 6.18.55-1-lts
 BusyBox v1.36.1-4 multi-call binary.

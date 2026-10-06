@@ -22,6 +22,9 @@ cp "$KERNEL" build/bzImage
     gcc --version | head -1
     g++ --version | head -1
     make --version | head -1
+    ld --version | head -1
+    pahole --version
+    cpio --version | head -1
     qemu-system-x86_64 --version | head -1
     make -s -C "$KDIR" kernelrelease
     "${BUSYBOX:-/usr/bin/busybox}" | head -1

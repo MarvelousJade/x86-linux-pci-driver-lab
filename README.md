@@ -48,4 +48,4 @@ Factorial: prepare completion before start -> wait up to one second -> acknowled
 - [Interview introduction, walkthrough and code-tracing questions](docs/interview.md)
 - [Learning exercises (no solutions)](docs/exercises.md)
 
-Discovery, both workflows, boundaries, concurrency, timeout/recovery, open-handle removal and reload are guest-verified. Three full repeat runs and both focused regressions passed. Learning checkpoints are being prepared separately. Agent-owned implementation/testing is not attributed to the learner; no invented personal stories.
+Discovery, both workflows, boundaries, concurrency, timeout/recovery, open-handle removal and reload are guest-verified. Three full repeat runs and both focused regressions passed. Two intentionally faulty learning checkpoints and separately verified reference solutions are preserved; see the exercise guide. Main contains no introduced driver defects. Agent-owned implementation/testing is not attributed to the learner; no invented personal stories.
